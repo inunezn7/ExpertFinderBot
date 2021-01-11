@@ -1,11 +1,15 @@
 import discord
 import os
 import pandas as pd
+from dotenv import load_dotenv
+
+load_dotenv('.env')
 
 client = discord.Client()  # The client is the connection to Discord
 os.chdir("/Users/Nacho/Desktop/ChatBot Project/")
 
 data = pd.DataFrame(columns=['content', 'time', 'author'])
+
 
 @client.event
 async def on_ready():  # on_ready is called when the client is done preparing the data received from Discord
@@ -31,4 +35,4 @@ async def on_message(message):  # It is called when the bot receives a message
         await message.channel.send("Scan completed")
 
 
-client.run('Nzk2OTEzNzMwNjc5MjA5OTk2.X_e1vw.Vef-U4fg2hGgrdZ1iXNLx7DOnS4')
+client.run(os.getenv('DISCORD_TOKEN'))
