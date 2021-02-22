@@ -1,4 +1,5 @@
 from discord.ext import commands, tasks
+from discord.utils import get
 import discord
 import os
 import pandas as pd
@@ -78,12 +79,19 @@ async def on_message(msg):  # It is called when the bot receives a message
     # Make sure the Bot prefix it's at the beginning of the message (In order to not to show a reply
     # every time someone type >>)
     elif msg.content.startswith(PREFIX):
+
+        log(msg) # Add message to log
         await bot.process_commands(msg)  # This line is necessary to allow the bot to hear the commands after
                                          # receive the on_message event.
 
     # Check it's DM
     elif isinstance(msg.channel, discord.DMChannel):
 
+        # Add message to log
+        log(msg)
+        #emoji = get(msg.channel.emojis, name="emoji1")
+
+        # Embedded message
         embedVar = discord.Embed(
             title="Hi there!",
             description="I'm a work-in-progress bot and I've been designed to be useful to open "
@@ -109,7 +117,7 @@ async def on_message(msg):  # It is called when the bot receives a message
                         "to email us to inunezn@fen.uchile.cl",
             color=0x00ff00)
 
-        await msg.channel.send(embed=embedVar)
+        await send_nLog(whereTo=msg.channel, msgString=embedVar.title + "\n" + embedVar.description, embed=True, msgEmbed=embedVar)
 
 
 @bot.command(name='idea',
@@ -148,7 +156,7 @@ async def idea(ctx, *message):
         title="Thank you for your comment :D",
         color=0x00ff00)
 
-    await ctx.send(embed=embedVar)
+    await send_nLog(whereTo=ctx.channel, msgString=embedVar.title, embed=True, msgEmbed=embedVar)
 
 
 @bot.command(name='expert',
@@ -177,7 +185,7 @@ async def expert(ctx, *concepts):
 
         # Check whether the concept it's in the dictionary
         if concept not in dic:
-            await ctx.send("So sorry, your concept has not be mentioned in this server")
+            await send_nLog(whereTo=ctx.channel, msgString="So sorry, your concept has not be mentioned in this server", embed=False)
             return
 
         usersList = dic[concept]
@@ -221,13 +229,21 @@ async def expert(ctx, *concepts):
         exp = dicNames[e]
         memb = g.get_member(int(e))
         membStatus = memb.status
+
+        # if membStatus == "online":
+        #     emoji = ":green_circle:"
+        # elif membStatus == "offline":
+        #     emoji = ":red_circle:"
+        # else:
+        #     emoji = ":yellow_circle:"
+
         output.append('{} @{} *({} mentions) {}*'.format(exp[1], exp[0], experts[e], membStatus))
 
     embedVar = discord.Embed(title="Experts for " + " ".join(concepts),
                              description="\n".join(output),
                              color=0x00ff00)
 
-    await ctx.send(embed=embedVar)
+    await send_nLog(whereTo=ctx.channel, msgString=embedVar.title + "\n" + embedVar.description, embed=True, msgEmbed=embedVar)
 
 
 @bot.command(name='scanFromScratch', help='Scan messages from every Channel from the start of the server until now',
@@ -236,11 +252,11 @@ async def scanFromScratch(ctx):
 
     # Check if the user can use the command
     if ctx.author.id != nachoID:
-        await ctx.send("I'm sorry, you are not allowed to use this command :(")
+        await send_nLog(whereTo=ctx, msgString="I'm sorry, you are not allowed to use this command :(", embed=False)
         return
 
     await scan(datetime(2016, 1, 1, 0, 0, 0, 0), datetime.utcnow(), append=False)  # A long time ago year. To scan all the messages from the server
-    await ctx.send("Scan completed")
+    await send_nLog(whereTo=ctx, msgString="Scan completed", embed=False)
 
 
 # Command
@@ -250,11 +266,12 @@ async def scanCommand(ctx):
 
     # Check if the user can use the command
     if ctx.author.id != nachoID:
-        await ctx.send("I'm sorry, you are not allowed to use this command :(")
+        await send_nLog(whereTo=ctx, msgString="I'm sorry, you are not allowed to use this command :(", embed=False)
+
         return
 
     await scanSinceLastUpdate()
-    await ctx.send("Scan completed")
+    await send_nLog(whereTo=ctx, msgString="Scan completed", embed=False)
 
 
 # Scan messages after the bot was not active for a while
@@ -357,7 +374,48 @@ async def on_command_error(ctx, error):
                                  description="The command you entered is invalid. Please check you typed it right. For "
                                              "more information type '>>help' command.",
                                  color=0x00ff00)
-        await ctx.channel.send(embed=embedVar)
+        await send_nLog(whereTo=ctx.channel, msgString=embedVar.title + "\n" + embedVar.description, embed=True, msgEmbed=embedVar)
+
+# Add to log
+# Create db and open file to write
+def log(msg, fromBot=False, ctx=None):
+
+    dataLog = pd.DataFrame(
+        columns=['author', 'authorID', 'content', 'time', 'channel', 'msgID'])
+
+    if fromBot:
+
+        dataLog = dataLog.append({
+            'content': msg,  # Append to database
+            'time': datetime.now(),
+            'author': bot.user.name,
+            'authorID': bot.user.id,
+            'channel': ctx,
+            'msgID': None
+        }, ignore_index=True)
+
+    else:
+
+        dataLog = dataLog.append({
+            'content': msg.content,  # Append to database
+            'time': datetime.now(),
+            'author': msg.author,
+            'authorID': msg.author.id,
+            'channel': msg.channel,
+            'msgID': msg.id
+        }, ignore_index=True)
+
+    # CSV
+    dataLog.to_csv('log.csv', mode='a', header=False)
+
+async def send_nLog(whereTo, msgString, embed=False, msgEmbed=""):
+
+    if embed:
+        log(msg=msgString, fromBot=True, ctx=whereTo)
+        await whereTo.send(embed=msgEmbed)
+    else:
+        log(msg=msgString, fromBot=True, ctx=whereTo)
+        await whereTo.send(msgString)
 
 
 # Split words from message and add them individually to the dictionary
