@@ -1,5 +1,4 @@
 from discord.ext import commands, tasks
-from discord.utils import get
 import discord
 import os
 import pandas as pd
@@ -25,31 +24,49 @@ PREFIX = '>>'
 load_dotenv('.env')  # Load TOKEN
 intents = discord.Intents(messages=True, members=True, guilds=True, presences=True)
 bot = commands.Bot(command_prefix=PREFIX, intents=intents) # Connection to Discord
+bot.description = "Hi ! I'm a bot designed to be useful to open " \
+                  "source communities by finding expert users in " \
+                  "a topic you need some help with. In that way you can mention or send a DM to " \
+                  "some of them to deliver your question. " \
+                  "My recommendations are based on the messages people have sent in this " \
+                  "discord server. " \
+                  "\n\n" \
+                  "Check my commands below. I hope I can give you a hand! " \
+                  "\n\n" \
+                  "Developed by Ignacio Nunez (Nacho#5274) and supervised by " \
+                  "Alexandre Bergel (Pharo server admin) from University of Chile."
+
+
+
 os.chdir("/Users/Nacho/Desktop/ChatBot Project/")   # Project directory
-LOOP_TIME = 5  # Minutes between iterations
+LOOP_TIME = 720  # Minutes between iterations
 
 # ----- Users IDs ------ #
 nachoID = 700809908861403286
 
 # ----- Channels IDs ------ #
+
+# Manual definition of channel to scan
+
 dicChannels = {}
-#dicChannels["Nacho_general"] = 700810165447950399
-dicChannels["ISCLab_general"] = 484788823444946965
-dicChannels["ISCLab_pharo"] = 485114368644612097
-dicChannels["ISCLab_vr"] = 689530665531736114
-dicChannels["ISCLab_robotic"] = 485114229083602944
-dicChannels["ISCLab_ia"] = 485114244522704911
-dicChannels["ISCLab_visualization"] = 485114270049239041
-dicChannels["ISCLab_kotlin"] = 485114297374998552
+# #dicChannels["Nacho_general"] = 700810165447950399
+# dicChannels["ISCLab_general"] = 484788823444946965
+# dicChannels["ISCLab_pharo"] = 485114368644612097
+# dicChannels["ISCLab_vr"] = 689530665531736114
+# dicChannels["ISCLab_robotic"] = 485114229083602944
+# dicChannels["ISCLab_ia"] = 485114244522704911
+# dicChannels["ISCLab_visualization"] = 485114270049239041
+# dicChannels["ISCLab_kotlin"] = 485114297374998552
 
-# Needed to show the nickname of the user in that Server
+#dicChannels["Pharo_hadoop"] = 494540796414918668
+
+# Enter the ID of the server to scan messages
+# Also, it is needed to show the nickname of the user in that Server
+
 ISCLAB_ID = 484788823444946963
+Pharo_ID = 223421264751099906 # Pharo Server
 
-# Choosing a Channel
-#idChannel = dicChannels["Nacho_general"]
-
-# This is temporary, to be able to choose a channel and don't get the messages of the irrelevant ones.
-# Later on, it might be useful to improve this system.
+GUILD_ID = Pharo_ID
 
 
 # ----- On_ready event ------ #
@@ -63,8 +80,19 @@ async def on_ready():  # on_ready is called when the client is done preparing th
             print(ch)
             print(ch.id)
     print(datetime.now())
-    scanEvery.start()
 
+    server = bot.get_guild(GUILD_ID)
+
+    # To scan every channel on the server
+
+    for ch in server.channels:
+        print(ch.type.name)
+        print(ch.type)
+        if ch.type.name == "text" and not ch.id == 361417134997241856: # gsoc_planning
+            print(ch.name)
+            dicChannels[ch.name] = ch.id
+
+    #scanEvery.start()
 
 # ----- On_message event ------ #
 @bot.event
@@ -94,7 +122,7 @@ async def on_message(msg):  # It is called when the bot receives a message
         # Embedded message
         embedVar = discord.Embed(
             title="Hi there!",
-            description="I'm a work-in-progress bot and I've been designed to be useful to open "
+            description="Hi ! I'm a bot designed to be useful to open "
                         "source communities by finding expert users in "
                         "a topic you need some help with. In that way you can mention or send a DM to "
                         "some of them to deliver your question. "
@@ -172,6 +200,14 @@ async def idea(ctx, *message):
                   "the most. It includes the number of times each user has mentioned that concept "
                   "on the server and whether the person is online or not.")
 async def expert(ctx, *concepts):
+    await expert_fun(ctx, concepts, False)
+
+
+async def expert_fun(ctx, concepts, online):
+    # Define guild
+    g = bot.get_guild(GUILD_ID)
+
+    # Open concepts dictionary
     with open('dictionary.txt') as d:
         dic = json.load(d)
     with open('dictionaryNames.txt') as d:
@@ -197,9 +233,20 @@ async def expert(ctx, *concepts):
             experts2 = {}
             for users in range(l):
                 e = max(usersList.items(), key=operator.itemgetter(1))[0]
-                experts2[e] = usersList[e]
+
+                # To avoid take into account deleted members
+                memb = g.get_member(int(e))
+                if memb is not None:
+                    # For expertOnline command
+                    if online:
+                        if memb.status == discord.member.Status.online:
+                            experts2[e] = usersList[e]
+                            count += 1
+                    else:
+                        experts2[e] = usersList[e]
+                        count += 1
+
                 usersList.pop(e)
-                count += 1
                 if count > 5:
                     break
 
@@ -220,30 +267,60 @@ async def expert(ctx, *concepts):
 
         experts = experts2
 
+    # Sort experts dictionary
+    experts = sorted(experts.items(), key=lambda x: x[1], reverse=True)
+
     # What's shown in chat Channel
     output = []
 
     # Join username and nickname
-    g = bot.get_guild(ISCLAB_ID)
-    for e in experts.keys():
-        exp = dicNames[e]
-        memb = g.get_member(int(e))
+    for e in experts:
+        exp = dicNames[e[0]]
+        memb = g.get_member(int(e[0]))
         membStatus = memb.status
 
-        # if membStatus == "online":
-        #     emoji = ":green_circle:"
-        # elif membStatus == "offline":
-        #     emoji = ":red_circle:"
-        # else:
-        #     emoji = ":yellow_circle:"
+        if membStatus == discord.member.Status.online:
+            emoji = "<:online:816440547299295252>"
+        elif membStatus == discord.member.Status.offline:
+            emoji = "<:offline:816439965255729173>"
+        elif membStatus == discord.member.Status.idle:
+            emoji = "<:idle:816439999666847775>"
+        else:
+            emoji = ""
 
-        output.append('{} @{} *({} mentions) {}*'.format(exp[1], exp[0], experts[e], membStatus))
+        output.append('{} @{} *({} mentions) {} {}*'.format(exp[1], exp[0], e[1], membStatus, emoji))
 
-    embedVar = discord.Embed(title="Experts for " + " ".join(concepts),
-                             description="\n".join(output),
-                             color=0x00ff00)
+    # Notify if no experts were found
+    if len(experts) == 0:
+        if online:
+            embedVar = discord.Embed(title="I couldn't find any experts online for " + " ".join(concepts),
+                                     color=0x00ff00)
+        else:
+            embedVar = discord.Embed(title="I couldn't find any experts for " + " ".join(concepts),
+                                    color=0x00ff00)
+        await send_nLog(whereTo=ctx.channel, msgString=embedVar.title, embed=True, msgEmbed=embedVar)
 
-    await send_nLog(whereTo=ctx.channel, msgString=embedVar.title + "\n" + embedVar.description, embed=True, msgEmbed=embedVar)
+    else:
+        embedVar = discord.Embed(title="Experts for " + " ".join(concepts),
+                                description="\n".join(output),
+                                color=0x00ff00)
+        await send_nLog(whereTo=ctx.channel, msgString=embedVar.title + "\n" + embedVar.description, embed=True, msgEmbed=embedVar)
+    # okTODO: Handle deleted user. e.g. artificial intelligence
+    # TODO: When searching for two concepts or more, sort the list and extend list of experts
+
+
+@bot.command(name='expertOnline',
+             brief="Find experts who are online now",
+             description="Type a key concept related to some topic you need some help with and I will show you "
+                         "people who is connected to discord in this moment.",
+             help="To find an expert you just need to write the word 'expertOnline' next to my command prefix [>>] "
+                  "followed by the concept(s) you want to ask for. For instance if you need help with"
+                  " the Roassal library (for visualization in Pharo) you have to send the message "
+                  "'>>expert roassal' and it will retrieve the people who talk about that "
+                  "the most. It includes the number of times each user has mentioned that concept "
+                  "on the server and whether the person is online or not.")
+async def expertOnline(ctx, *concepts):
+    await expert_fun(ctx, concepts, online=True)
 
 
 @bot.command(name='scanFromScratch', help='Scan messages from every Channel from the start of the server until now',
@@ -296,11 +373,6 @@ async def scanEvery():
 # This dictionary is defined at the beginning of the script.
 # Creates a csv file with the messages and extra information about them.
 async def scan(after, before, append=True, limit=None):
-
-    # Save time from last time messages were updated
-    f = open("LastUpdated.txt", "w")
-    f.write(before.isoformat())
-    f.close()
 
     # Create db and open file to write
     data = pd.DataFrame(columns=['author', 'nickname', 'authorID', 'content', 'time', 'channelName', 'channelID', 'serverName', 'serverID'])
@@ -356,6 +428,7 @@ async def scan(after, before, append=True, limit=None):
         loadedData['messages'].extend(dataJSON['messages'])
         with open('MessagesJSON.txt', 'w') as outfile:
             json.dump(loadedData, outfile, cls=Encoder.DateTimeEncoder)
+        saveLastUpdate(before)
         processData(dataJSON)
 
         #with open('MessagesJSON.txt', 'a') as outfile:
@@ -363,6 +436,7 @@ async def scan(after, before, append=True, limit=None):
     else:
         with open('MessagesJSON.txt', 'w') as outfile:
             json.dump(dataJSON, outfile, cls=Encoder.DateTimeEncoder)
+        saveLastUpdate(before)
         processData(dataJSON, True)
 
 @bot.event
@@ -375,6 +449,7 @@ async def on_command_error(ctx, error):
                                              "more information type '>>help' command.",
                                  color=0x00ff00)
         await send_nLog(whereTo=ctx.channel, msgString=embedVar.title + "\n" + embedVar.description, embed=True, msgEmbed=embedVar)
+
 
 # Add to log
 # Create db and open file to write
@@ -468,7 +543,7 @@ def processData(newData, new=False):
                 else:
                     dic[word] = {entry['authorID']: 1}
 
-    # Save the dictionaries
+    # Save dictionaries
     with open('dictionary.txt', 'w') as outfile:
         json.dump(dic, outfile)
     with open('dictionaryNames.txt', 'w') as outfile:
@@ -482,6 +557,13 @@ def processData(newData, new=False):
     # okTODO: identify expert when related concepts are given as input. eg. virtual reality. Maybe two search process
     #       in dictionary and check if the results retrieve the same person
     # TODO: Is it useful to handle users mentions?
+
+
+def saveLastUpdate(time):
+    # Save time from last time messages were updated
+    f = open("LastUpdated.txt", "w")
+    f.write(time.isoformat())
+    f.close()
 
 
 def validMessage(msg):
