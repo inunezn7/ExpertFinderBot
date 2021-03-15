@@ -38,8 +38,9 @@ bot.description = "Hi ! I'm a bot designed to be useful to open " \
 
 
 
-os.chdir("/Users/Nacho/Desktop/ChatBot Project/")   # Project directory
-LOOP_TIME = 720  # Minutes between iterations
+os.chdir("/home/inunez/ChatBot Project/")   # Project directory
+#os.chdir("/Users/Nacho/Desktop/ChatBot Project/")   # Project directory
+LOOP_TIME = 5  # Minutes between iterations
 
 # ----- Users IDs ------ #
 nachoID = 700809908861403286
@@ -92,7 +93,7 @@ async def on_ready():  # on_ready is called when the client is done preparing th
             print(ch.name)
             dicChannels[ch.name] = ch.id
 
-    #scanEvery.start()
+    scanEvery.start()
 
 # ----- On_message event ------ #
 @bot.event
@@ -112,12 +113,23 @@ async def on_message(msg):  # It is called when the bot receives a message
         await bot.process_commands(msg)  # This line is necessary to allow the bot to hear the commands after
                                          # receive the on_message event.
 
+        if isinstance(msg.channel, discord.DMChannel):
+
+            if msg.content.startswith(PREFIX + " "):
+
+                embedVar = discord.Embed(title="Invalid Command",
+                                         description="The command you entered is invalid. Please make sure there is not"
+                                                     " a white space between the '>>' and the command name. For "
+                                                     "more information type '>>help' command.",
+                                         color=0x00ff00)
+                await send_nLog(whereTo=msg.channel, msgString=embedVar.title + "\n" + embedVar.description, embed=True,
+                                msgEmbed=embedVar)
+
     # Check it's DM
     elif isinstance(msg.channel, discord.DMChannel):
 
         # Add message to log
         log(msg)
-        #emoji = get(msg.channel.emojis, name="emoji1")
 
         # Embedded message
         embedVar = discord.Embed(
@@ -138,6 +150,8 @@ async def on_message(msg):  # It is called when the bot receives a message
                         "\n\n"
                         "You can also give us a suggestion or an improvement idea with the command "
                         "``>>idea`` followed by your comments. It will be very appreciated!"
+                        "\n\n"
+                        "For more information please type '>>help'."
                         "\n\n"
                         "I'm being developed by Ignacio Nunez (Nacho#5274) and supervised by "
                         "Alexandre Bergel (Pharo server admin) from University of Chile. "
@@ -241,14 +255,10 @@ async def expert_fun(ctx, concepts, online):
                     if online:
                         if memb.status == discord.member.Status.online:
                             experts2[e] = usersList[e]
-                            count += 1
                     else:
                         experts2[e] = usersList[e]
-                        count += 1
 
                 usersList.pop(e)
-                if count > 5:
-                    break
 
         else:
             experts2 = {}
@@ -261,10 +271,6 @@ async def expert_fun(ctx, concepts, online):
                     minimo = min(min1, min2)
                     experts2[e] = minimo
 
-                    count += 1
-                    if count > 5:
-                        break
-
         experts = experts2
 
     # Sort experts dictionary
@@ -274,6 +280,7 @@ async def expert_fun(ctx, concepts, online):
     output = []
 
     # Join username and nickname
+    count = 0
     for e in experts:
         exp = dicNames[e[0]]
         memb = g.get_member(int(e[0]))
@@ -289,6 +296,9 @@ async def expert_fun(ctx, concepts, online):
             emoji = ""
 
         output.append('{} @{} *({} mentions) {} {}*'.format(exp[1], exp[0], e[1], membStatus, emoji))
+        count += 1
+        if count > 5:
+            break
 
     # Notify if no experts were found
     if len(experts) == 0:
@@ -306,19 +316,19 @@ async def expert_fun(ctx, concepts, online):
                                 color=0x00ff00)
         await send_nLog(whereTo=ctx.channel, msgString=embedVar.title + "\n" + embedVar.description, embed=True, msgEmbed=embedVar)
     # okTODO: Handle deleted user. e.g. artificial intelligence
-    # TODO: When searching for two concepts or more, sort the list and extend list of experts
+    # okTODO: When searching for two concepts or more, sort the list and extend list of experts
 
 
 @bot.command(name='expertOnline',
              brief="Find experts who are online now",
              description="Type a key concept related to some topic you need some help with and I will show you "
-                         "people who is connected to discord in this moment.",
+                         "expert users connected to discord in this moment.",
              help="To find an expert you just need to write the word 'expertOnline' next to my command prefix [>>] "
                   "followed by the concept(s) you want to ask for. For instance if you need help with"
                   " the Roassal library (for visualization in Pharo) you have to send the message "
                   "'>>expert roassal' and it will retrieve the people who talk about that "
-                  "the most. It includes the number of times each user has mentioned that concept "
-                  "on the server and whether the person is online or not.")
+                  "the most and are online now. It also includes the number of times each user has mentioned that "
+                  "concept on the server.")
 async def expertOnline(ctx, *concepts):
     await expert_fun(ctx, concepts, online=True)
 
@@ -431,12 +441,10 @@ async def scan(after, before, append=True, limit=None):
         saveLastUpdate(before)
         processData(dataJSON)
 
-        #with open('MessagesJSON.txt', 'a') as outfile:
-        #    json.dump(dataJSON, outfile, cls=Encoder.DateTimeEncoder)
     else:
         with open('MessagesJSON.txt', 'w') as outfile:
             json.dump(dataJSON, outfile, cls=Encoder.DateTimeEncoder)
-        saveLastUpdate(before)
+        saveLastUpdate(before) # TODO: Run this line just if the data was successfully written in the file
         processData(dataJSON, True)
 
 @bot.event
@@ -549,6 +557,7 @@ def processData(newData, new=False):
     with open('dictionaryNames.txt', 'w') as outfile:
         json.dump(dicNames, outfile)
 
+    # TODO: Save Messages data in another file -> How to make kind of repository of scanned files?
     # TODO: Do not count commands or chatbot messages
     # TODO: Group related concepts
     # okTODO: Identify question marks in message
