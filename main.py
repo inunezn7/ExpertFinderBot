@@ -38,11 +38,12 @@ bot.description = "Hi ! I'm a bot designed to be useful to open " \
 
 
 
-#os.chdir("/home/inunez/ChatBot Project/")   # Project directory
 os.chdir("/Users/Nacho/Desktop/ChatBot Project/")   # Project directory
+#os.chdir("/home/inunez/ChatBot Project/")   # Project directory
 LOOP_TIME = 30  # Minutes between iterations
-N_EXPERTS = 5
-N_MIN_MENTIONS = 0
+N_EXPERTS = 6
+N_MIN_MENTIONS = 3
+SCAN_NUMBER = 1
 
 # ----- Users IDs ------ #
 nachoID = 700809908861403286
@@ -71,20 +72,30 @@ Pharo_ID = 223421264751099906 # Pharo Server
 
 GUILD_ID = Pharo_ID
 
-
 # ----- On_ready event ------ #
 @bot.event
 async def on_ready():  # on_ready is called when the client is done preparing the data received from Discord
+    print("-------------------------------------------------------------------------------------------------------- \n")
     print('We have logged in as {0.user}'.format(bot))  # In response, print something
-    for server in bot.guilds:
-        print("\n", server.name)
-        print("\n", server.id)
-        for ch in server.channels:
-            print(ch)
-            print(ch.id)
     print(datetime.now())
+    print("\n --------------------------------------------------------------------------------------------------------")
+    # for server in bot.guilds:
+    #     print("\n", server.name)
+    #     print("\n", server.id)
+    #     for ch in server.channels:
+    #         print(ch)
+    #         print(ch.id)
 
     server = bot.get_guild(GUILD_ID)
+    member_count = len([m for m in server.members if not m.bot])
+    print(f'Member Count {member_count}')
+
+    for m in server.members:
+        if m.bot:
+            print(m)
+
+    members_online = len([m for m in server.members if not m.bot and m.status == discord.member.Status.online])
+    print(f'Online members {members_online}')
 
     # To scan every channel on the server
 
@@ -224,7 +235,7 @@ async def expert_fun(ctx, concepts, online, messages):
     # Define guild
     g = bot.get_guild(GUILD_ID)
 
-    if messages:
+    if messages:        # Count messages where the concept was mentioned instead of counting the number of mentions
         with open('dictionaryMsgs.txt') as d:
             dic = json.load(d)
     else:
@@ -361,7 +372,7 @@ async def expert2Beta(ctx, *Concepts):
     # lowerCase concepts:
     i = 0
     for concept in Concepts:
-        concepts.append(concept)
+        concepts.append(concept.lower())
 
     candidates = {}
     experts = {}
@@ -451,7 +462,7 @@ async def expert2Beta(ctx, *Concepts):
 
 @bot.command(name='expertFirst',
              hidden=True)
-async def expertFirst(ctx, concepts):
+async def expertFirst(ctx, *concepts):
     # Define guild
     g = bot.get_guild(GUILD_ID)
 
@@ -601,11 +612,15 @@ async def scan(after, before, append=True, limit=None):
     dataJSON = {}
     dataJSON['messages'] = []
 
+    # Starting
+    time_start = datetime.now()
+    print("\nStarting scan at " + str(time_start))
+
     # Iterate over channels
     for chnID in dicChannels.values():
 
         chn = bot.get_channel(chnID)
-        print("Scanning", chn, "Channel of", chn.guild)
+        #print("Scanning", chn, "Channel of", chn.guild)
 
         async for msg in chn.history(limit=limit, before=before, after=after):  # limit=None retrieves every message in the channel
 
@@ -658,6 +673,13 @@ async def scan(after, before, append=True, limit=None):
             json.dump(dataJSON, outfile, cls=Encoder.DateTimeEncoder)
         saveLastUpdate(before) # TODO: Run this line just if the data was successfully written in the file
         processData(dataJSON, True)
+
+    global SCAN_NUMBER
+    print("Scan number " + str(SCAN_NUMBER) + " completed successfully in " + str((datetime.now() -
+                                                                            time_start).total_seconds()) + " seconds")
+    SCAN_NUMBER += 1
+
+
 
 @bot.event
 async def on_command_error(ctx, error):
@@ -819,6 +841,8 @@ def processData(newData, new=False):
     # Save dictionaries
     with open('dictionary.txt', 'w') as outfile:
         json.dump(dic, outfile)
+    with open('dictionaryMsgs.txt', 'w') as outfile:
+        json.dump(dicMsgs, outfile)
     with open('dictionaryNames.txt', 'w') as outfile:
         json.dump(dicNames, outfile)
 
