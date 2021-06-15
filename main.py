@@ -3,11 +3,13 @@ import discord
 import os
 import pandas as pd
 from dotenv import load_dotenv
-from datetime import timedelta, datetime, timezone
+from datetime import datetime
+from gensim.models import KeyedVectors
 import json
 import Encoder
 import operator
 import re
+import numpy as np
 
 # ----- Set up ------ #
 stopwords = ["i", "me", "my", "myself", "we", "our", "ours", "ourselves", "you", "your", "yours", "yourself",
@@ -40,36 +42,23 @@ bot.description = "Hi ! I'm a bot designed to be useful to open " \
 
 os.chdir("/Users/Nacho/Desktop/ChatBot Project/")   # Project directory
 #os.chdir("/home/inunez/ChatBot Project/")   # Project directory
-LOOP_TIME = 30  # Minutes between iterations
-N_EXPERTS = 6
+LOOP_TIME = 720  # Minutes between iterations
+N_EXPERTS = 5
 N_MIN_MENTIONS = 3
 SCAN_NUMBER = 1
+SIM_COEF = 0.6
 
-# ----- Users IDs ------ #
-nachoID = 700809908861403286
+# model 4
+#SIM_COEF = 0.6  # and 10 related words
 
 # ----- Channels IDs ------ #
 
-# Manual definition of channel to scan
-
 dicChannels = {}
-# #dicChannels["Nacho_general"] = 700810165447950399
-# dicChannels["ISCLab_general"] = 484788823444946965
-# dicChannels["ISCLab_pharo"] = 485114368644612097
-# dicChannels["ISCLab_vr"] = 689530665531736114
-# dicChannels["ISCLab_robotic"] = 485114229083602944
-# dicChannels["ISCLab_ia"] = 485114244522704911
-# dicChannels["ISCLab_visualization"] = 485114270049239041
-# dicChannels["ISCLab_kotlin"] = 485114297374998552
-
-#dicChannels["Pharo_hadoop"] = 494540796414918668
 
 # Enter the ID of the server to scan messages
 # Also, it is needed to show the nickname of the user in that Server
 
-ISCLAB_ID = 484788823444946963
 Pharo_ID = 223421264751099906 # Pharo Server
-
 GUILD_ID = Pharo_ID
 
 # ----- On_ready event ------ #
@@ -79,23 +68,8 @@ async def on_ready():  # on_ready is called when the client is done preparing th
     print('We have logged in as {0.user}'.format(bot))  # In response, print something
     print(datetime.now())
     print("\n --------------------------------------------------------------------------------------------------------")
-    # for server in bot.guilds:
-    #     print("\n", server.name)
-    #     print("\n", server.id)
-    #     for ch in server.channels:
-    #         print(ch)
-    #         print(ch.id)
 
     server = bot.get_guild(GUILD_ID)
-    member_count = len([m for m in server.members if not m.bot])
-    print(f'Member Count {member_count}')
-
-    for m in server.members:
-        if m.bot:
-            print(m)
-
-    members_online = len([m for m in server.members if not m.bot and m.status == discord.member.Status.online])
-    print(f'Online members {members_online}')
 
     # To scan every channel on the server
 
@@ -115,10 +89,7 @@ async def on_message(msg):  # It is called when the bot receives a message
     if msg.author == bot.user:  # To check the message was not sent by ourselves.
         return
 
-    elif msg.content.startswith('$hello'):
-        await msg.channel.send('Hello!')
-
-    # Make sure the Bot prefix it's at the beginning of the message (In order to not to show a reply
+    # Make sure the Bot prefix it's at the beginning of the message (For not showing a reply
     # every time someone type >>)
     elif msg.content.startswith(PREFIX):
 
@@ -138,7 +109,7 @@ async def on_message(msg):  # It is called when the bot receives a message
                 await send_nLog(whereTo=msg.author, msgString=embedVar.title + "\n" + embedVar.description, embed=True,
                                 msgEmbed=embedVar) # Replies in private
 
-    # Check it's DM
+    # Check whether it is DM
     elif isinstance(msg.channel, discord.DMChannel):
 
         # Add message to log
@@ -176,6 +147,11 @@ async def on_message(msg):  # It is called when the bot receives a message
                         msgEmbed=embedVar) # Replies in private
 
 
+""" --------------------------------------------------------------------------------------------------------------------
+
+idea command: It allows an user to give an idea or an opinion about the bot
+
+-------------------------------------------------------------------------------------------------------------------- """
 @bot.command(name='idea',
              brief='Do you see some improvements? Any suggestions? Please tell me!',
              description='What you would like me to do? Please tell me !',
@@ -208,12 +184,19 @@ async def idea(ctx, *message):
     # CSV
     dataIdeas.to_csv('ideas.csv', mode='a', header=False)
 
+    # Reply
     embedVar = discord.Embed(
         title="Thank you for your comment :D",
         color=0x00ff00)
 
     await send_nLog(whereTo=ctx.author, msgString=embedVar.title, embed=True, msgEmbed=embedVar) # Replies in private
 
+
+""" --------------------------------------------------------------------------------------------------------------------
+
+expert command: The default specification of the expert command. It is needed to set the parameters of expert_fun
+
+-------------------------------------------------------------------------------------------------------------------- """
 
 @bot.command(name='expert',
              brief="Type a key concept and I'll find some experts you can ask about it",
@@ -231,9 +214,20 @@ async def expert(ctx, *concepts):
     await expert_fun(ctx, concepts, False, False)
 
 
-async def expert_fun(ctx, concepts, online, messages):
+""" --------------------------------------------------------------------------------------------------------------------
+
+expert_fun : The core of expert searching
+
+-------------------------------------------------------------------------------------------------------------------- """
+
+
+async def expert_fun(ctx, concepts, online, messages, we=False, same_message=True):
+
     # Define guild
     g = bot.get_guild(GUILD_ID)
+
+    # Lower case
+    concepts = [concept.lower() for concept in concepts]
 
     if messages:        # Count messages where the concept was mentioned instead of counting the number of mentions
         with open('dictionaryMsgs.txt') as d:
@@ -243,24 +237,41 @@ async def expert_fun(ctx, concepts, online, messages):
         with open('dictionary.txt') as d:
             dic = json.load(d)
 
+    # Open concepts dictionary
+    with open('messagesJSON.txt') as d:
+        msgsData = json.load(d)
+            
+    # Load word embeddings
+    if we:
+        pharo_w2v = KeyedVectors.load("./w2v_models/pharo_w2v_200d.model", mmap='r')
+
     with open('dictionaryNames.txt') as d:
         dicNames = json.load(d)
 
     # All concepts in one
     concept = " ".join(concepts)
+    concept_under = "_".join(concepts)
 
     # Change to lowercase
     concept = concept.lower()
 
-    # Check whether the concept it's in the dictionary
+    # Check whether the concept it's in the dictionary or not
     if concept not in dic:
         await send_nLog(whereTo=ctx.author, msgString="So sorry, your concept has not be mentioned in this server",
                         embed=False) # Replies in private
         return
 
-    usersList = dic[concept]
+    # Find users that have used all the concepts in a multiple-concept query in a same message
+    if len(concepts) > 1 and same_message:
+        usersList = lookup_same_msg(concepts, msgsData['messages'])
+    else:
+        usersList = dic[concept]
+
+    # Initialize the experts list (dictionary)
     experts = {}
 
+    # Add candidates to expert list. It makes sure members accounts are not deleted.
+    # If online member option is selected, then just online users are added to the list
     for user in usersList:
 
         # To avoid take into account deleted members
@@ -275,6 +286,48 @@ async def expert_fun(ctx, concepts, online, messages):
             else:
 
                 experts[user] = usersList[user]
+
+    # Mix word embedding experts with concept experts
+    # Word Embeddings
+    if we:
+
+        max = 0
+        for element in usersList:
+            if usersList[element] > max:
+                max = usersList[element]
+
+        if len(concepts) > 1:
+            first = 1
+            for concept in concepts:
+                if first == 1:
+                    sum_vector = pharo_w2v.wv[concept]
+                    first = 0
+                else:
+                    sum_vector = np.sum([sum_vector, pharo_w2v.wv[concept]], axis=0)
+
+            similar = [sim for sim in pharo_w2v.wv.similar_by_vector(sum_vector/len(concepts), topn=30) if sim[0] not in concepts and sim[0] != concept_under]
+            print(similar)
+
+
+        else:
+            try:
+                similar = pharo_w2v.wv.most_similar(positive=[concept], topn=30)
+            except:
+                similar = []
+
+        count = 0
+        for sword in similar:
+            print(sword)
+            if sword[1] < SIM_COEF or count > 10:
+                break
+            try:
+                if same_message and comp_word(sword[0]) != 0:
+                    experts = updateDic(experts, lookup_same_msg(comp_word(sword[0]), msgsData['messages']))
+                else:
+                    experts = updateDic(experts, dic[sword[0]])
+            except:
+                pass
+            count += 1
 
 
     # Sort experts dictionary
@@ -313,10 +366,7 @@ async def expert_fun(ctx, concepts, online, messages):
         else:
             embedVar = discord.Embed(title="I couldn't find any experts for " + " ".join(concepts),
                                     color=0x00ff00)
-        # Reminder of DM communication
-        # if not isinstance(ctx.channel, discord.DMChannel):
-        #     embedVar.set_footer(text="* For multiple queries, please consider to make them in private. Just send me a "
-        #                              "DM!")
+
         # Send message and add it to the log
         await send_nLog(whereTo=ctx.author, msgString=embedVar.title, embed=True, msgEmbed=embedVar) # Replies in private
 
@@ -324,16 +374,17 @@ async def expert_fun(ctx, concepts, online, messages):
         embedVar = discord.Embed(title="Experts for " + " ".join(concepts),
                                 description="\n".join(output),
                                 color=0x00ff00)
-        # # Reminder of DM communication
-        # if not isinstance(ctx.channel, discord.DMChannel):
-        #     embedVar.set_footer(text="* For multiple queries, please consider to make them in private. Just send me a "
-        #                              "DM!")
+
         # Send message and add it to the log
         await send_nLog(whereTo=ctx.author, msgString=embedVar.title + "\n" + embedVar.description, embed=True,
                         msgEmbed=embedVar) # Replies in private
-    # okTODO: Handle deleted user. e.g. artificial intelligence
-    # okTODO: When searching for two concepts or more, sort the list and extend list of experts
 
+
+""" --------------------------------------------------------------------------------------------------------------------
+
+expertOnline : Search for expert who are online in the moment of the query 
+
+-------------------------------------------------------------------------------------------------------------------- """
 
 @bot.command(name='expertOnline',
              brief="Find experts who are online now",
@@ -348,16 +399,38 @@ async def expert_fun(ctx, concepts, online, messages):
 async def expertOnline(ctx, *concepts):
     await expert_fun(ctx, concepts, online=True)
 
-# ----------------------------------------------------------------------------------------------------------------------
+""" --------------------------------------------------------------------------------------------------------------------
+
+Hidden expert search variations
+
+-------------------------------------------------------------------------------------------------------------------- """
 
 @bot.command(name='expertMsgs',
              hidden=True)
 async def expertMsgs(ctx, *concepts):
     await expert_fun(ctx, concepts, False, True)
 
+# ----------------------------------------------------------------------------------------------------------------------
+
+@bot.command(name='expertWE',
+             hidden=True)
+async def expertWE(ctx, *concepts):
+    await expert_fun(ctx, concepts, False, True, we=True)
 
 # ----------------------------------------------------------------------------------------------------------------------
-# De prueba
+
+@bot.command(name='expertWEMentions',
+             hidden=True)
+async def expertWEMentions(ctx, *concepts):
+    await expert_fun(ctx, concepts, False, False, we=True)
+
+""" --------------------------------------------------------------------------------------------------------------------
+
+expert2Beta: Multiple concept query searching
+
+It search for experts based on a multiple concept query considering the messages where all the concepts where mentioned.
+
+-------------------------------------------------------------------------------------------------------------------- """
 
 @bot.command(name='expert2Beta', hidden=True)
 async def expert2Beta(ctx, *Concepts):
@@ -374,49 +447,8 @@ async def expert2Beta(ctx, *Concepts):
     for concept in Concepts:
         concepts.append(concept.lower())
 
-    candidates = {}
     experts = {}
-    for msg in msgsData['messages']:
-
-        cont = 0
-        contTimes = 0
-        contTimes_previuos = 10000
-        # Count n of words in the message
-        for concept in concepts:
-
-            #if concept in msg['content']:
-            #    cont += 1
-            #else:
-            #    break
-
-            contTimes = 0
-            first = True
-            for word in reversed(str.split(msg['content'].lower())):
-
-                if notURL(word):
-
-                    if Question(word):
-                        break
-
-                    word = cleanWord(word)
-                    if word == concept:
-                        contTimes += 1
-                        if first:
-                            cont += 1
-                            first = False
-
-            if first == True:
-                break
-
-        contTimes_previuos = min(contTimes, contTimes_previuos)
-
-        # If every concepts is in the message
-        if cont == len(concepts):
-            user = msg['authorID']
-            if user in candidates.keys():
-                candidates[user] += contTimes_previuos
-            else:
-                candidates[user] = contTimes_previuos
+    candidates = lookup_same_msg(concepts, msgsData['messages'])
 
     for j in range(min(5, len(candidates))):
         e = max(candidates.items(), key=operator.itemgetter(1))[0]
@@ -458,103 +490,11 @@ async def expert2Beta(ctx, *Concepts):
         await send_nLog(whereTo=ctx.author, msgString=embedVar.title + "\n" + embedVar.description, embed=True,
                         msgEmbed=embedVar) # Replies in private
 
-# ----------------------------------------------------------------------------------------------------------------------
+""" --------------------------------------------------------------------------------------------------------------------
 
-@bot.command(name='expertFirst',
-             hidden=True)
-async def expertFirst(ctx, *concepts):
-    # Define guild
-    g = bot.get_guild(GUILD_ID)
+scanFromScratch : It reset the messages history form the database and it is scanned from scratch 
 
-    # Open concepts dictionary
-    with open('dictionary.txt') as d:
-        dic = json.load(d)
-    with open('dictionaryNames.txt') as d:
-        dicNames = json.load(d)
-
-    first = True
-    for concept in concepts:
-
-        # Change to lowercase
-        concept = concept.lower()
-
-        # Check whether the concept it's in the dictionary
-        if concept not in dic:
-            await send_nLog(whereTo=ctx.channel, msgString="So sorry, your concept has not be mentioned in this server", embed=False)
-            return
-
-        usersList = dic[concept]
-        count=0
-        l = len(usersList)
-
-        if first:
-            first = False
-            experts2 = {}
-            for users in range(l):
-                e = max(usersList.items(), key=operator.itemgetter(1))[0]
-
-                # To avoid take into account deleted members
-                memb = g.get_member(int(e))
-                if memb is not None:
-                    # For expertOnline command
-                    experts2[e] = usersList[e]
-
-                usersList.pop(e)
-
-        else:
-            experts2 = {}
-            for users in range(l):
-                e = max(usersList.items(), key=operator.itemgetter(1))[0]
-                min1 = usersList[e]
-                usersList.pop(e)
-                if e in experts:
-                    min2 = experts[e]
-                    minimo = min(min1, min2)
-                    experts2[e] = minimo
-
-        experts = experts2
-
-    # Sort experts dictionary
-    experts = sorted(experts.items(), key=lambda x: x[1], reverse=True)
-
-    # What's shown in chat Channel
-    output = []
-
-    # Join username and nickname
-    count = 0
-    for e in experts:
-        exp = dicNames[e[0]]
-        memb = g.get_member(int(e[0]))
-        membStatus = memb.status
-
-        if membStatus == discord.member.Status.online:
-            emoji = "<:online:816440547299295252>"
-        elif membStatus == discord.member.Status.offline:
-            emoji = "<:offline:816439965255729173>"
-        elif membStatus == discord.member.Status.idle:
-            emoji = "<:idle:816439999666847775>"
-        else:
-            emoji = ""
-
-        output.append('{} @{} *({} mentions) {} {}*'.format(exp[1], exp[0], e[1], membStatus, emoji))
-        count += 1
-        if count > 5:
-            break
-
-    # Notify if no experts were found
-    if len(experts) == 0:
-
-        embedVar = discord.Embed(title="I couldn't find any experts for " + " ".join(concepts),
-                                    color=0x00ff00)
-        await send_nLog(whereTo=ctx.channel, msgString=embedVar.title, embed=True, msgEmbed=embedVar)
-
-    else:
-        embedVar = discord.Embed(title="Experts for " + " ".join(concepts),
-                                description="\n".join(output),
-                                color=0x00ff00)
-        await send_nLog(whereTo=ctx.channel, msgString=embedVar.title + "\n" + embedVar.description, embed=True, msgEmbed=embedVar)
-
-# ----------------------------------------------------------------------------------------------------------------------
+-------------------------------------------------------------------------------------------------------------------- """
 
 @bot.command(name='scanFromScratch', help='Scan messages from every Channel from the start of the server until now',
              hidden=True)
@@ -569,7 +509,12 @@ async def scanFromScratch(ctx):
     await send_nLog(whereTo=ctx, msgString="Scan completed", embed=False)
 
 
-# Command
+""" --------------------------------------------------------------------------------------------------------------------
+
+scanCommand : This command it is used to scan the messages since the last time it was done 
+
+-------------------------------------------------------------------------------------------------------------------- """
+
 @bot.command(name='scanCommand', help='Scan messages from every Channel since last time server was scanned',
              hidden=True)
 async def scanCommand(ctx):
@@ -584,8 +529,13 @@ async def scanCommand(ctx):
     await send_nLog(whereTo=ctx, msgString="Scan completed", embed=False)
 
 
-# Scan messages after the bot was not active for a while
-# Function
+""" --------------------------------------------------------------------------------------------------------------------
+
+scanSinceLastUpdate : This is the function to scan the messages since the last time it was done.
+
+Both the automatic scan and the scan command use this function 
+
+-------------------------------------------------------------------------------------------------------------------- """
 async def scanSinceLastUpdate():
 
     f = open("LastUpdated.txt", "r")
@@ -680,7 +630,6 @@ async def scan(after, before, append=True, limit=None):
     SCAN_NUMBER += 1
 
 
-
 @bot.event
 async def on_command_error(ctx, error):
 
@@ -692,6 +641,78 @@ async def on_command_error(ctx, error):
                                  color=0x00ff00)
         await send_nLog(whereTo=ctx.channel, msgString=embedVar.title + "\n" + embedVar.description, embed=True, msgEmbed=embedVar)
 
+
+def lookup_same_msg(concepts, data):
+    candidates = {}
+    for msg in data:
+
+        cont = 0
+        contTimes = 0
+        contTimes_previuos = 10000
+
+        # Count n of words in the message
+        for concept in concepts:
+
+            # if concept in msg['content']:
+            #    cont += 1
+            # else:
+            #    break
+
+            contTimes = 0
+            first = True
+            for word in reversed(str.split(msg['content'].lower())):
+
+                if notURL(word):
+
+                    if Question(word):
+                        break
+
+                    word = cleanWord(word)
+                    if word == concept:
+                        contTimes += 1
+                        if first:
+                            cont += 1
+                            first = False
+
+            if first == True:
+                break
+
+        contTimes_previuos = min(contTimes, contTimes_previuos)
+
+        # If every concepts is in the message
+        if cont == len(concepts):
+            user = str(msg['authorID'])
+            if user in candidates.keys():
+                candidates[user] += contTimes_previuos
+            else:
+                candidates[user] = contTimes_previuos
+
+    return candidates
+
+
+def updateDic(dic_orig, dic_add, max=None):
+
+    g = bot.get_guild(GUILD_ID)
+    dic_new = dic_orig
+
+    for element in dic_add:
+        # To avoid take into account deleted members
+        memb = g.get_member(int(element))
+        if memb is not None:
+            if element in dic_new:
+                #dic_new[element] += min(dic_add[element], max)
+                dic_new[element] += dic_add[element]
+            else:
+                dic_new[element] = dic_add[element]
+
+    return dic_new
+
+def comp_word(word):
+    words = word.replace("_", " ").split()
+    if len(words) == 1:
+        return 0
+    else:
+        return words
 
 # Add to log
 # Create db and open file to write
@@ -845,16 +866,6 @@ def processData(newData, new=False):
         json.dump(dicMsgs, outfile)
     with open('dictionaryNames.txt', 'w') as outfile:
         json.dump(dicNames, outfile)
-
-    # TODO: Save Messages data in another file -> How to make kind of repository of scanned files?
-    # TODO: Do not count commands or chatbot messages
-    # TODO: Group related concepts
-    # okTODO: Identify question marks in message
-    # okTODO: Identify block concepts
-    # TODO: Clean concepts. eg. roassal2 roassal3 just roassal. Maybe keep raw version and add cleaned version?
-    # okTODO: identify expert when related concepts are given as input. eg. virtual reality. Maybe two search process
-    #       in dictionary and check if the results retrieve the same person
-    # TODO: Is it useful to handle users mentions?
 
 
 def saveLastUpdate(time):
