@@ -70,7 +70,15 @@ The methodology used do not define a threshold to determine whether a user is an
 Therefore it is fair to say that it is not a problem when the list of candadites to experts is large enough, because the Bot's answers take just the top-5 users,
 but it leads to imprecise results when there are not too many users using the concepts queried.
 
-## About the authors
+# Installation
+
+To install the ExpertFinder it is necessary to download the main folder and link an existing bot to the "main.py" file by creating a .env file with its token. It is also necessary to change some parameters like the Discord's adminID and the Discord community ID where you want the bot works in.
+
+It's is important to add that the Bot needs the permission from one admin of the Discord server where it is going to operate. That can be done in the bot's settings in Discord.
+
+Once the bot was included to the target server, the command ``>>scanFromScratch`` has to be executed by the bot's admin to scan the messages history of the server.
+
+# About the authors
 
 This project has being developed by Ignacio Nunez (Nacho#5274 on Discord) and supervised by Alexandre Bergel from University of Chile.
 For further information or suggestions feel free to email us to inunezn@fen.uchile.cl.
