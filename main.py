@@ -7,7 +7,6 @@ from datetime import datetime
 from gensim.models import KeyedVectors
 import json
 import Encoder
-import operator
 import re
 import numpy as np
 
@@ -42,14 +41,12 @@ bot.description = "Hi ! I'm a bot designed to be useful to open " \
 
 os.chdir("/Users/Nacho/Desktop/ChatBot Project/")   # Project directory
 #os.chdir("/home/inunez/ChatBot Project/")   # Project directory
+
 LOOP_TIME = 720  # Minutes between iterations
 N_EXPERTS = 5
 N_MIN_MENTIONS = 3
 SCAN_NUMBER = 1
 SIM_COEF = 0.6
-
-# model 4
-#SIM_COEF = 0.6  # and 10 related words
 
 # ----- Channels IDs ------ #
 
@@ -57,9 +54,8 @@ dicChannels = {}
 
 # Enter the ID of the server to scan messages
 # Also, it is needed to show the nickname of the user in that Server
-
-Pharo_ID = 223421264751099906 # Pharo Server
-GUILD_ID = Pharo_ID
+GUILD_ID = 223421264751099906 # Pharo Server
+adminID = 700809908861403286
 
 # ----- On_ready event ------ #
 @bot.event
@@ -72,14 +68,13 @@ async def on_ready():  # on_ready is called when the client is done preparing th
     server = bot.get_guild(GUILD_ID)
 
     # To scan every channel on the server
-
     for ch in server.channels:
-        #print(ch.type.name)
-        #print(ch.type)
-        if ch.type.name == "text" and not ch.id == 361417134997241856: # gsoc_planning
+        # add to dicChannels all the text channels the bot has access
+        if ch.type.name == "text" and bot.user in ch.members:
             #print(ch.name)
             dicChannels[ch.name] = ch.id
 
+    # Scan the server periodically
     scanEvery.start()
 
 # ----- On_message event ------ #
@@ -211,7 +206,7 @@ expert command: The default specification of the expert command. It is needed to
                   "the most. It includes the number of times each user has mentioned that concept "
                   "on the server and whether the person is online or not.")
 async def expert(ctx, *concepts):
-    await expert_fun(ctx, concepts, False, False)
+    await expert_fun(ctx, concepts, online=False, messages=True, we=True, weMulti=False, same_message=True)
 
 
 """ --------------------------------------------------------------------------------------------------------------------
@@ -221,7 +216,7 @@ expert_fun : The core of expert searching
 -------------------------------------------------------------------------------------------------------------------- """
 
 
-async def expert_fun(ctx, concepts, online, messages, we=False, same_message=True):
+async def expert_fun(ctx, concepts, online, messages, we=False,  weMulti=False, same_message=True):
 
     # Define guild
     g = bot.get_guild(GUILD_ID)
@@ -236,15 +231,12 @@ async def expert_fun(ctx, concepts, online, messages, we=False, same_message=Tru
         # Open concepts dictionary
         with open('dictionary.txt') as d:
             dic = json.load(d)
-
-    # Open concepts dictionary
-    with open('messagesJSON.txt') as d:
-        msgsData = json.load(d)
             
     # Load word embeddings
     if we:
         pharo_w2v = KeyedVectors.load("./w2v_models/pharo_w2v_200d.model", mmap='r')
 
+    # Load users names
     with open('dictionaryNames.txt') as d:
         dicNames = json.load(d)
 
@@ -263,9 +255,9 @@ async def expert_fun(ctx, concepts, online, messages, we=False, same_message=Tru
 
     # Find users that have used all the concepts in a multiple-concept query in a same message
     if len(concepts) > 1 and same_message:
-        usersList = lookup_same_msg(concepts, msgsData['messages'])
+        usersList = multi_words_same_msg(concepts, dic)
     else:
-        usersList = dic[concept]
+        usersList = get_usersList(concept, dic)
 
     # Initialize the experts list (dictionary)
     experts = {}
@@ -297,17 +289,21 @@ async def expert_fun(ctx, concepts, online, messages, we=False, same_message=Tru
                 max = usersList[element]
 
         if len(concepts) > 1:
-            first = 1
-            for concept in concepts:
-                if first == 1:
-                    sum_vector = pharo_w2v.wv[concept]
-                    first = 0
-                else:
-                    sum_vector = np.sum([sum_vector, pharo_w2v.wv[concept]], axis=0)
 
-            similar = [sim for sim in pharo_w2v.wv.similar_by_vector(sum_vector/len(concepts), topn=30) if sim[0] not in concepts and sim[0] != concept_under]
-            print(similar)
+            similar = []
 
+            # Word Embeddings with multiple-words concept
+            if weMulti:
+                first = 1
+                for concept in concepts:
+                    if first == 1:
+                        sum_vector = pharo_w2v.wv[concept]
+                        first = 0
+                    else:
+                        sum_vector = np.sum([sum_vector, pharo_w2v.wv[concept]], axis=0)
+
+                similar = [sim for sim in pharo_w2v.wv.similar_by_vector(sum_vector/len(concepts), topn=30) if sim[0] not in concepts and sim[0] != concept_under]
+                print(similar)
 
         else:
             try:
@@ -322,9 +318,9 @@ async def expert_fun(ctx, concepts, online, messages, we=False, same_message=Tru
                 break
             try:
                 if same_message and comp_word(sword[0]) != 0:
-                    experts = updateDic(experts, lookup_same_msg(comp_word(sword[0]), msgsData['messages']))
+                    experts = updateDic(experts, multi_words_same_msg(comp_word(sword[0]), dic))
                 else:
-                    experts = updateDic(experts, dic[sword[0]])
+                    experts = updateDic(experts, get_usersList(sword[0], dic))
             except:
                 pass
             count += 1
@@ -382,7 +378,7 @@ async def expert_fun(ctx, concepts, online, messages, we=False, same_message=Tru
 
 """ --------------------------------------------------------------------------------------------------------------------
 
-expertOnline : Search for expert who are online in the moment of the query 
+expertOnline : Search for expert who are online at the moment of the query 
 
 -------------------------------------------------------------------------------------------------------------------- """
 
@@ -426,69 +422,38 @@ async def expertWEMentions(ctx, *concepts):
 
 """ --------------------------------------------------------------------------------------------------------------------
 
-expert2Beta: Multiple concept query searching
+multi_words_same_msg: Multiple concept query searching
 
 It search for experts based on a multiple concept query considering the messages where all the concepts where mentioned.
 
 -------------------------------------------------------------------------------------------------------------------- """
 
-@bot.command(name='expert2Beta', hidden=True)
-async def expert2Beta(ctx, *Concepts):
-
-    # Open concepts dictionary
-    with open('messagesJSON.txt') as d:
-        msgsData = json.load(d)
-    with open('dictionaryNames.txt') as d:
-        dicNames = json.load(d)
+def multi_words_same_msg(Concepts, dicMsgs):
 
     concepts = []
     # lowerCase concepts:
-    i = 0
     for concept in Concepts:
         concepts.append(concept.lower())
 
     experts = {}
-    candidates = lookup_same_msg(concepts, msgsData['messages'])
 
-    for j in range(min(5, len(candidates))):
-        e = max(candidates.items(), key=operator.itemgetter(1))[0]
-        experts[e] = candidates[e]
-        candidates.pop(e)
+    # Intersections between words mentions
+    candidates_byword = dicMsgs[concepts[0]].keys()
 
-    # What's shown in chat Channel
-    output = []
+    for concept in concepts[1:]:
+        candidates_byword = candidates_byword & dicMsgs[concept].keys()
 
-    # Join username and nickname
-    count = 0
-    for e in experts.keys():
-        exp = dicNames[str(e)]
-        #memb = g.get_member(int(e[0]))
-        #membStatus = memb.status
+    candidates = {}
+    for candidate in candidates_byword:
+        msgs_list = set(dicMsgs[concepts[0]][str(candidate)]["msgsID"])
 
-        # if membStatus == discord.member.Status.online:
-        #     emoji = "<:online:816440547299295252>"
-        # elif membStatus == discord.member.Status.offline:
-        #     emoji = "<:offline:816439965255729173>"
-        # elif membStatus == discord.member.Status.idle:
-        #     emoji = "<:idle:816439999666847775>"
-        # else:
-        #     emoji = ""
+        for concept in concepts[1:]:
+            new_list = set(dicMsgs[concept][str(candidate)]["msgsID"])
+            msgs_list = msgs_list & new_list
 
-        output.append('{} @{} *({} mentions)*'.format(exp[1], exp[0], str(experts[e])))
+        candidates[candidate] = len(msgs_list)
 
-    # Notify if no experts were found
-    if len(experts) == 0:
-        embedVar = discord.Embed(title="I couldn't find any experts for " + " ".join(concepts),
-                                    color=0x00ff00)
-        await send_nLog(whereTo=ctx.author, msgString=embedVar.title, embed=True,
-                        msgEmbed=embedVar) # Replies in private
-
-    else:
-        embedVar = discord.Embed(title="Experts for " + " ".join(concepts),
-                                description="\n".join(output),
-                                color=0x00ff00)
-        await send_nLog(whereTo=ctx.author, msgString=embedVar.title + "\n" + embedVar.description, embed=True,
-                        msgEmbed=embedVar) # Replies in private
+    return candidates
 
 """ --------------------------------------------------------------------------------------------------------------------
 
@@ -501,7 +466,7 @@ scanFromScratch : It reset the messages history form the database and it is scan
 async def scanFromScratch(ctx):
 
     # Check if the user can use the command
-    if ctx.author.id != nachoID:
+    if ctx.author.id != adminID:
         await send_nLog(whereTo=ctx, msgString="I'm sorry, you are not allowed to use this command :(", embed=False)
         return
 
@@ -520,7 +485,7 @@ scanCommand : This command it is used to scan the messages since the last time i
 async def scanCommand(ctx):
 
     # Check if the user can use the command
-    if ctx.author.id != nachoID:
+    if ctx.author.id != adminID:
         await send_nLog(whereTo=ctx, msgString="I'm sorry, you are not allowed to use this command :(", embed=False)
 
         return
@@ -598,7 +563,8 @@ async def scan(after, before, append=True, limit=None):
                     'channelName': chn.name,
                     'channelID': '{:d}'.format(chn.id),
                     'serverName': chn.guild.name,
-                    'serverID': '{:d}'.format(chn.guild.id)
+                    'serverID': '{:d}'.format(chn.guild.id),
+                    'msgID': '{:d}'.format(msg.id)
                 })
 
     # Close and save
@@ -707,6 +673,12 @@ def updateDic(dic_orig, dic_add, max=None):
 
     return dic_new
 
+def get_usersList(concept, dic):
+    usersList = dic[concept]
+    for user in dic[concept]:
+        usersList[user] = usersList[user]["count"]
+    return usersList
+
 def comp_word(word):
     words = word.replace("_", " ").split()
     if len(words) == 1:
@@ -767,6 +739,7 @@ def processData(newData, new=False):
             dicMsgs = json.load(d)
         with open('dictionaryNames.txt') as d:
             dicNames = json.load(d)
+
     # Create new dictionary
     else:
         dic = {}
@@ -828,13 +801,16 @@ def processData(newData, new=False):
                             if word in dicMsgs:
                                 l = dicMsgs[word]  # reminder: l is a dictionary
                                 if author_id not in l.keys():  # The user hasn't written that word previously
-                                    l[author_id] = 1  # Add user to the dictionary of that word
+                                    # l[author_id] = 1  # Add user to the dictionary of that word
+                                    l[author_id] = {"count": 1, "msgsID": [entry["msgID"]]}
                                 else:
-                                    l[author_id] += 1
+                                    # l[author_id] += 1
+                                    l[author_id]["count"] += 1
+                                    l[author_id]["msgsID"].append(entry["msgID"])
 
                             # Word is not in the dictionary
                             else:
-                                dicMsgs[word] = {author_id: 1}
+                                dicMsgs[word] = {author_id: {"count": 1, "msgsID": [entry["msgID"]]}}
 
                             tempList.append(word)
 
