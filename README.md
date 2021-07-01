@@ -80,6 +80,8 @@ Once the bot was included to the target server, the command ``>>scanFromScratch`
 
 A script to train a Word Embeddings model is provided in the file "WordEmbeddings.py". It can be executed when the bot has already stored the messages history of the server.
 
+When all the above is done, it would be possible to run the bot. To do so, it is recommended to host the programm in a sever to allow it to keep operating without interruptions.
+
 # About the authors
 
 This project has being developed by Ignacio Nunez (Nacho#5274 on Discord) and supervised by Alexandre Bergel from University of Chile.
