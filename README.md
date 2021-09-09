@@ -72,15 +72,51 @@ but it leads to imprecise results when there are not too many users using the co
 
 # Installation
 
-To install the ExpertFinder it is necessary to download the main folder and link an existing bot to the "main.py" file by creating a .env file with its token. It is also necessary to change some parameters like the Discord's adminID and the Discord community ID where you want the bot works in.
+### Prerequisites
 
-It's is important to add that the Bot needs the permission from one admin of the Discord server where it is going to operate. That can be done in the bot's settings in Discord.
+You can get all python packages by using requirements.txt file:
 
-Once the bot was included to the target server, the command ``>>scanFromScratch`` has to be executed by the bot's admin to scan the messages history of the server.
+```
+pip install -r requirements.txt
+```
 
-A script to train a Word Embeddings model is provided in the file "WordEmbeddings.py". It can be executed when the bot has already stored the messages history of the server.
+### Bot Token
 
-When all the above is done, it would be possible to run the bot. To do so, it is recommended to host the programm in a sever to allow it to keep operating without interruptions.
+First of all, creating a Bot in Discord is needed (See [Discord Developers Portal](https://discord.com/developers/applications)). After that, the bot token has to be stored in a ``.env`` file in the form:
+
+```
+DISCORD_TOKEN="your bot's token"
+```
+
+### Initiate the system
+
+Please follow the next stepes:
+
+1. Execute the following:
+
+```
+python main.py init
+```
+
+It is going to ask you about your User Discord ID and the Server ID. If you don't know where to find them visit this [page](https://www.remote.tools/remote-work/how-to-find-discord-id). The messages in the server are going to be scanned and the data on it is going to be processed. A bunch of files will be created and stored in "data" folder.
+
+2. Execute WordEmbeddings.py file:
+
+```
+python WordEmbeddings.py
+```
+
+This will create the Word Embedding model based on the messages history of the Discord server.
+
+### Run the bot
+
+Now the system is ready to be used. To run the bot just run the main program:
+
+```
+python main.py
+```
+
+It is recommended to host the programm in a sever to allow it to keep operating without interruptions.
 
 # About the authors
 
