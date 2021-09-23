@@ -1,4 +1,4 @@
-# ExpertFinderBot :robot:
+# ExpertFinderBot :robot: - Version 2.0 (Beta)
 
 Expert finder is a Bot for Discord platform and its aim is to help users to find experts members of the community in certain topic. 
 This allows to ask for help about that topic to the right person and to guide the tasks assignation within a team.
