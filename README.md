@@ -33,15 +33,11 @@ Because of the online members it is a reduced number, the precision of the searc
 
 ## How it works
 
-### Baseline
-
-The retrieval system is based on the number of messages the users have sent that contain the concepts entered in the query along their message history.
-For multiple-concept queries, the number of messages where all the words on the query have been used are considered to calculate the level of expertise.
+The retrieval system is based on term-frequency of the concepts entered in the query and related concepts as well, along message history of the members of the server.
 
 ### Word Embeddings
 
-The baseline is improved by using a Word Embedding model trained with the message history of the Discord Server. 
-This allows to associate terms related by their meaning. For instance, the next table shows the most similar words to "database":
+To define related concepts a Word Embedding model trained with the message history of the Discord Server is used. This allows to associate terms related by their meaning. For instance, the following table shows the most similar words to "database":
 
 | Concept       | Cosine Similarity   |
 | ------------- |:-------------------:|
@@ -53,7 +49,7 @@ This allows to associate terms related by their meaning. For instance, the next 
 |"migrations"   | 0.7       |
 |"dbs"          | 0.69      |
 
-Taking into account that experts generally know about related concepts and topics, it was decided to also count the messages where the expert candidates
+Taking into account that experts generally know about related concepts and topics, it makes sense to also count the messages where the expert candidates
 use similar words according to the Word Embedding model.
 
 ## Preliminar evaluation :bar_chart:
