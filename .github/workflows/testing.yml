@@ -33,6 +33,7 @@ jobs:
           pip install pytest
           pip install discord
           pip install gensim
+          python3 -m pip install dpytest
           #sudo pip install --user -r requirements.txt
       - name: Run tests with pytest
         run: pytest
